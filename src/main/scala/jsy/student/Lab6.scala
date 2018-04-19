@@ -8,7 +8,7 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
 
   /*
    * CSCI 3155: Lab 6
-   * <Your Name>
+   * Michael Gohde
    *
    * Partner: <Your Partner's Name>
    * Collaborators: <Any Collaborators>
@@ -36,12 +36,21 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
   /*** Exercises with Continuations ***/
 
   def foldLeftAndThen[A,B](t: Tree)(z: A)(f: (A,Int) => A)(sc: A => B): B = {
-    def loop(acc: A, t: Tree)(sc: A => B): B = ???
+    def loop(acc: A, t: Tree)(sc: A => B): B = t match {
+      case Empty => sc(acc) //This base case is returning list(). f(acc, 0) here is returning list(0)
+      case Node(l, v, r) => loop(f(acc, v), l)( a => loop(a, r)(sc))//loop(f(acc, v), l)(loop(f(acc, r))(sc))
+      //case Node(l, v, r) => sc(loop(f(loop(acc, l)( loop(FUCK YEAH, BABY) ), v), r))
+    }
     loop(z, t)(sc)
   }
 
   def dfs[A](t: Tree)(f: Int => Boolean)(sc: List[Int] => A)(fc: () => A): A = {
-    def loop(path: List[Int], t: Tree)(fc: () => A): A = ???
+    def loop(path: List[Int], t: Tree)(fc: () => A): A = t match {
+      case Empty => sc(path)
+        //If this is part of the path:
+      case Node(l, v, r) => if(f(v)) sc(v::path) else fc()//loop(v::path, l)(fc) else sc(path) //( () => loop(v::path, r)(fc)) else sc(path)
+      //case Node(l, v, r) => if(f(v)) fc(t::loop(l)(fc)) else fc()
+    }
     loop(Nil, t)(fc)
   }
 
@@ -101,11 +110,39 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
       case _ => Failure("expected intersect", next)
     }
 
-    def intersect(next: Input): ParseResult[RegExpr] = ???
+    def intersect(next: Input): ParseResult[RegExpr] = concat(next) match {
+      case Success(r, next) => {
+        def intersections(acc: RegExpr, next: Input): ParseResult[RegExpr] =
+          if (next.atEnd) Success(acc, next)
+          else (next.first, next.rest) match {
+            case ('&', next) => intersect(next) match {
+              case Success(r, next) => intersections(RIntersect(acc, r), next)
+              case _ => Failure("expected concat", next)
+            }
+            case _ => Success(acc, next)
+          }
+        intersections(r, next)
+      }
+      case _ => Failure("expected concat", next)
+    }
 
-    def concat(next: Input): ParseResult[RegExpr] = ???
+    def concat(next: Input): ParseResult[RegExpr] = not(next) match {
+      case Success(r, next) => {}
+      case _ => Failure("expected neg", next)
+    }
 
-    def not(next: Input): ParseResult[RegExpr] = ???
+    def not(next: Input): ParseResult[RegExpr] = star(next) match {
+        //Just pass on the star:
+      case Success(r, next) => Success(r, next)
+
+        //Perform the not operation:
+      case Failure(_, next) => (next.first, next.rest) match { //In this case, we need to transform a tilde into a not operator:
+        case ('~', rest) => not(rest) match {
+          case Success(r, next) => Success(RNeg(r), next)
+        }
+        case _ => Failure("expected neg", next)
+      }
+    }
 
     def star(next: Input): ParseResult[RegExpr] = ???
 
@@ -128,13 +165,19 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
     */
   def test(re: RegExpr, chars: List[Char])(sc: List[Char] => Boolean): Boolean = (re, chars) match {
     /* Basic Operators */
-    case (RNoString, _) => ???
-    case (REmptyString, _) => ???
-    case (RSingle(_), Nil) => ???
-    case (RSingle(c1), c2 :: t) => ???
-    case (RConcat(re1, re2), _) => ???
-    case (RUnion(re1, re2), _) => ???
-    case (RStar(re1), _) => ???
+    case (RNoString, s) => s match {
+      case Nil => true
+      case _ => false
+    } //Empty set
+    case (REmptyString, s) => s match {
+      case Nil => true
+      case _ => false
+    }
+    case (RSingle(_), Nil) => false
+    case (RSingle(c1), c2 :: t) => if(c1==c2) sc(t) else false
+    case (RConcat(re1, re2), _) => test(re1, chars) {ch => test(re2, ch)(sc)}
+    case (RUnion(re1, re2), _) => test(re1, chars)(sc) || test(re2, chars)(sc)
+    case (RStar(re1), _) => test(re1, chars)(sc) || sc(chars)
 
     /* Extended Operators */
     case (RAnyChar, Nil) => false
@@ -147,7 +190,8 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
     case (RNeg(re1), _) => ???
   }
 
-  def retest(re: RegExpr, s: String): Boolean = test(re, s.toList) { chars => ??? }
+  //TODO: Come back to this. The continuation function needs to be a call on test once more.
+  def retest(re: RegExpr, s: String): Boolean = test(re, s.toList) { chars => {val str=chars.mkString; s==chars} }
 
 
   /*******************************/
@@ -155,6 +199,8 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
   /*******************************/
 
   /* This part is optional for fun and extra credit.
+   *
+   * Note from Michael: You fellas have an interesting definition of "fun" :)
    *
    * If you want your own complete JavaScripty interpreter, you can copy your
    * Lab 5 interpreter here and extend it for the Lab 6 constructs.
