@@ -46,10 +46,9 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
 
   def dfs[A](t: Tree)(f: Int => Boolean)(sc: List[Int] => A)(fc: () => A): A = {
     def loop(path: List[Int], t: Tree)(fc: () => A): A = t match {
-      case Empty => sc(path)
-        //If this is part of the path:
-      case Node(l, v, r) => if(f(v)) sc(v::path) else fc()//loop(v::path, l)(fc) else sc(path) //( () => loop(v::path, r)(fc)) else sc(path)
-      //case Node(l, v, r) => if(f(v)) fc(t::loop(l)(fc)) else fc()
+      case Empty => fc()
+      case Node(_,d,_) if f(d) => sc(d::path)
+      case Node(l,d,r) => loop(d::path, l)({ () => loop(d::path, r)(fc)})
     }
     loop(Nil, t)(fc)
   }
@@ -126,31 +125,75 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
       case _ => Failure("expected concat", next)
     }
 
-    def concat(next: Input): ParseResult[RegExpr] = not(next) match {
-      case Success(r, next) => {}
-      case _ => Failure("expected neg", next)
-    }
+    def concat(next: Input): ParseResult[RegExpr] = not(next) match{
+      case Success(r,next) => {
+        def concats(acc:RegExpr, next:Input): ParseResult[RegExpr] =
+          if(next.atEnd) Success(acc, next)
+          else  not(next) match{
+            case Success(r, next) => concats(RConcat(acc,r),next)
+            case _ => Failure("expected not", next)
 
-    def not(next: Input): ParseResult[RegExpr] = star(next) match {
-        //Just pass on the star:
-      case Success(r, next) => Success(r, next)
+            //            case _ => Success(acc, next)
+          }
+        concats(r,next)
 
-        //Perform the not operation:
-      case Failure(_, next) => (next.first, next.rest) match { //In this case, we need to transform a tilde into a not operator:
-        case ('~', rest) => not(rest) match {
-          case Success(r, next) => Success(RNeg(r), next)
-        }
-        case _ => Failure("expected neg", next)
       }
+      case _=> Failure("expected not",next)
     }
 
-    def star(next: Input): ParseResult[RegExpr] = ???
+    def not(next: Input): ParseResult[RegExpr] = star(next) match{
+      case Success(r,next) => {
+        def nots(acc:RegExpr, next:Input): ParseResult[RegExpr] =
+          if(next.atEnd) Success(acc,next)
+          else (next.first,next.rest) match {
+            case ('~', next) => star(next) match{
+              case Success(r,next) => nots(RNeg(acc),next)
+              case _ => Failure("expected star",next)
+            }
+            case _ => Success(acc,next)
+          }
+        nots(r,next)
+      }
+      case _ => Failure("expected star",next)
+    }
+
+    def star(next: Input): ParseResult[RegExpr] = atom(next) match{
+      case Success(r,next) => {
+        def stars(acc: RegExpr, next: Input): ParseResult[RegExpr] =
+          if (next.atEnd) Success(acc, next)
+          else (next.first, next.rest) match {
+            case ('*', next) => atom(next) match {
+              case Success(r, next) => stars(RStar(acc), next)
+              case _ => Failure("expected atom", next)
+            }
+            case ('+', next) => atom(next) match {
+              case Success(r, next) => stars(RPlus(acc), next)
+              case _ => Failure("expected atom", next)
+            }
+            case ('?', next) => atom(next) match {
+              case Success(r, next) => stars(ROption(acc), next)
+              case _ => Failure("expected atom", next)
+            }
+            case _ => Success(acc, next)
+          }
+
+        stars(r, next)
+      }
+      case _ => Failure("expected atom",next)
+    }
 
     /* This set is useful to check if a Char is/is not a regular expression
        meta-language character.  Use delimiters.contains(c) for a Char c. */
     val delimiters = Set('|', '&', '~', '*', '+', '?', '!', '#', '.', '(', ')')
 
-    def atom(next: Input): ParseResult[RegExpr] = ???
+    def atom(next: Input): ParseResult[RegExpr] = (next.first, next.rest) match {
+      case ('!', rest) => Success(RNoString, rest)
+      case ('#', rest) => Success(REmptyString, rest)
+      case ('.', rest) => Success(RAnyChar, rest)
+      case (c, rest) if !delimiters.contains(c) => Success(RSingle(c), rest)
+        //TODO: Add a case for parens.
+      case _ => Failure("Expected atom.", next)
+    }
   }
 
 
@@ -191,7 +234,7 @@ object Lab6 extends jsy.util.JsyApplication with Lab6Like {
   }
 
   //TODO: Come back to this. The continuation function needs to be a call on test once more.
-  def retest(re: RegExpr, s: String): Boolean = test(re, s.toList) { chars => {val str=chars.mkString; s==chars} }
+  def retest(re: RegExpr, s: String): Boolean = test(re, s.toList) { chars => chars == Nil }
 
 
   /*******************************/
